@@ -38,7 +38,7 @@ Read QC & pre-processing     | Aligners / quantifiers | Post-alignment processin
                              | [Salmon][salmon]       | [Prokka][prokka]          | [RSeQC][rseqc]
                              | [Slamdunk][slamdunk]   | [Samblaster][samblaster]  | [BUSCO][busco]
                              | [STAR][star]           | [Samtools][samtools]      | [goleft][goleft]
-                             | [Tophat][tophat]       | [SnpEff][snpeff]          |
+                             | [Tophat][tophat]       | [SnpEff][snpeff]          | [deepTools][deeptools]
                              |                        | [Subread featureCounts][featurecounts] |
 
 MultiQC can also easily parse data from custom scripts, if correctly formatted / configured.

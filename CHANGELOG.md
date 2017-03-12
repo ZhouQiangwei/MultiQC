@@ -32,6 +32,8 @@ the [MultiQC docs](http://multiqc.info/docs/#v1.0-updates).
 * **RSeQC**
   * Fixed Python3 error in Junction Saturation code
   * Fixed JS error for Junction Saturation that made the single-sample combined plot only show _All Junctions_
+* [**deepTools**](http://deeptools.readthedocs.io/en/latest/index.html) - new module!
+ * New module for efficient analysis of high-throughput sequencing data, such as ChIP-seq, RNA-seq or MNase-seq.
 
 #### Core MultiQC updates:
 * Change in module structure and import statements (see [details](http://multiqc.info/docs/#v1.0-updates)).

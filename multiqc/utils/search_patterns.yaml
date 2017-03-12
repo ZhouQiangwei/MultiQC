@@ -40,6 +40,17 @@ custom_content:
 cutadapt:
     contents: 'This is cutadapt'
     # contents: 'cutadapt version' # Use this instead if using very old versions of cutadapt (eg. v1.2)
+deepTools:
+    Corr:
+        fn: '*Corr*tab'
+    PCA:
+        fn: '*PCA*tab'
+    fgpr:
+        fn: '*fgpr*tab'
+    gc_bias:
+        fn: '*gcFreq.txt'
+    coverage:
+        fn: '*Cov*tab'
 fastq_screen:
     fn: '*_screen.txt'
 fastqc:
