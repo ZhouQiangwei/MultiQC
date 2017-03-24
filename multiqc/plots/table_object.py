@@ -48,6 +48,14 @@ class datatable (object):
                 for k in keys:
                     headers[idx][k] = {}
 
+            # Ensure that keys are strings, not numeric
+            keys = [str(k) for k in keys]
+            for k in list(headers[idx].keys()):
+                headers[idx][str(k)] = headers[idx].pop(k)
+            for s_name in data[idx].keys():
+                for k in list(data[idx][s_name].keys()):
+                    data[idx][s_name][str(k)] = data[idx][s_name].pop(k)
+
             # Check that we have some data in each column
             empties = list()
             for k in keys:
@@ -97,13 +105,13 @@ class datatable (object):
                 try:
                     headers[idx][k]['dmax'] = float(headers[idx][k]['max'])
                 except TypeError:
-                    headers[idx][k]['dmax'] = float("-inf")
+                    headers[idx][k]['dmax'] = 0
                     setdmax = True
 
                 try:
                     headers[idx][k]['dmin'] = float(headers[idx][k]['min'])
                 except TypeError:
-                    headers[idx][k]['dmin'] = float("inf")
+                    headers[idx][k]['dmin'] = 0
                     setdmin = True
 
                 # Figure out the min / max if not supplied

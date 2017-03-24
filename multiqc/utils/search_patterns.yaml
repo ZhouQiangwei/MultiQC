@@ -37,6 +37,11 @@ custom_content:
         - '*_mqc.tsv'
         - '*_mqc.log'
         - '*_mqc.out'
+clusterflow:
+    logs:
+        fn: '*_clusterFlow.txt'
+    runfiles:
+        fn: '*.run'
 cutadapt:
     contents: 'This is cutadapt'
     # contents: 'cutadapt version' # Use this instead if using very old versions of cutadapt (eg. v1.2)
@@ -138,6 +143,18 @@ qualimap:
             fn: 'coverage_profile_along_genes_(total).txt'
 quast:
     fn: 'report.tsv'
+rna_seqc:
+    metrics:
+        fn: 'metrics.tsv'
+    coverage:
+        fn:
+            - 'meanCoverageNorm_high.txt'
+            - 'meanCoverageNorm_medium.txt'
+            - 'meanCoverageNorm_low.txt'
+    correlation:
+        fn:
+            - 'corrMatrixPearson.txt'
+            - 'corrMatrixSpearman.txt'
 rseqc:
     bam_stat:
         contents: 'Proper-paired reads map to different chrom:'

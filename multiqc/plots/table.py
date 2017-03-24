@@ -7,7 +7,7 @@ import logging
 import random
 import re
 
-from multiqc.utils import config, report, util_functions
+from multiqc.utils import config, report, util_functions, mqc_colour
 from multiqc.plots import table_object, beeswarm
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ def make_table (dt):
     table_id = re.sub(r'\W+', '_', table_id)
     t_headers = OrderedDict()
     t_modal_headers = OrderedDict()
-    t_rows = defaultdict(lambda: dict())
+    t_rows = OrderedDict()
     dt.raw_vals = defaultdict(lambda: dict())
     empty_cells = dict()
     hidden_cols = 1
@@ -78,16 +78,14 @@ def make_table (dt):
                 checked = ''
                 hidden_cols += 1
 
-            c_col = '' if header['scale'] == False else 'chroma-col'
-
-            data_attr = 'data-chroma-scale="{}" data-chroma-max="{}" data-chroma-min="{}" data-namespace="{}" {}' \
-                .format(header['scale'], header['dmax'], header['dmin'], header['namespace'], shared_key)
+            data_attr = 'data-dmax="{}" data-dmin="{}" data-namespace="{}" {}' \
+                .format(header['dmax'], header['dmin'], header['namespace'], shared_key)
 
             cell_contents = '<span data-toggle="tooltip" title="{}: {}">{}</span>' \
                 .format(header['namespace'], header['description'], header['title'])
 
-            t_headers[rid] = '<th id="header_{rid}" class="{cc} {rid} {h}" {d}>{c}</th>' \
-                .format(rid=rid, d=data_attr, h=hide, c=cell_contents, cc=c_col)
+            t_headers[rid] = '<th id="header_{rid}" class="{rid} {h}" {da}>{c}</th>' \
+                .format(rid=rid, h=hide, da=data_attr, c=cell_contents)
 
             empty_cells[rid] = '<td class="data-coloured {rid} {h}"></td>'.format(rid=rid, h=hide)
 
@@ -115,6 +113,12 @@ def make_table (dt):
                     col_id = '<code>{}</code>'.format(k),
                     sk = header.get('shared_key', '')
                 )
+
+            # Make a colour scale
+            if header['scale'] == False:
+                c_scale = None
+            else:
+                c_scale = mqc_colour.mqc_colour_scale(header['scale'], header['dmin'], header['dmax'])
 
             # Add the data table cells
             for (s_name, samp) in dt.data[idx].items():
@@ -148,14 +152,21 @@ def make_table (dt):
 
                     # Build HTML
                     if not header['scale']:
+                        if s_name not in t_rows:
+                            t_rows[s_name] = dict()
                         t_rows[s_name][rid] = '<td class="{rid} {h}">{v}</td>'.format(rid=rid, h=hide, v=val)
                     else:
-                        bar_html = '<span class="bar" style="width:{}%;"></span>'.format(percentage)
+                        if c_scale is not None:
+                            col = ' background-color:{};'.format(c_scale.get_colour(val))
+                        else:
+                            col = ''
+                        bar_html = '<span class="bar" style="width:{}%;{}"></span>'.format(percentage, col)
                         val_html = '<span class="val">{}</span>'.format(val)
                         wrapper_html = '<div class="wrapper">{}{}</div>'.format(bar_html, val_html)
 
-                        t_rows[s_name][rid] = \
-                            '<td class="data-coloured {rid} {h}">{c}</td>'.format(rid=rid, h=hide, c=wrapper_html)
+                        if s_name not in t_rows:
+                            t_rows[s_name] = dict()
+                        t_rows[s_name][rid] = '<td class="data-coloured {rid} {h}">{c}</td>'.format(rid=rid, h=hide, c=wrapper_html)
 
             # Remove header if we don't have any filled cells for it
             if sum([len(rows) for rows in t_rows.values()]) == 0:
@@ -170,21 +181,41 @@ def make_table (dt):
     # Buttons above the table
     html = ''
     if not config.simple_output:
+
+        # Copy Table Button
         html += """
         <button type="button" class="mqc_table_copy_btn btn btn-default btn-sm" data-clipboard-target="#{tid}">
             <span class="glyphicon glyphicon-copy"></span> Copy table
         </button>
-        <button type="button" class="mqc_table_configModal_btn btn btn-default btn-sm" data-toggle="modal" data-target="#{tid}_configModal">
-            <span class="glyphicon glyphicon-th"></span> Configure Columns
-        </button>
+        """
+
+        # Configure Columns Button
+        if len(t_headers) > 2:
+            html += """
+            <button type="button" class="mqc_table_configModal_btn btn btn-default btn-sm" data-toggle="modal" data-target="#{tid}_configModal">
+                <span class="glyphicon glyphicon-th"></span> Configure Columns
+            </button>
+            """.format(tid=table_id)
+
+        # Sort By Highlight button
+        html += """
         <button type="button" class="mqc_table_sortHighlight btn btn-default btn-sm" data-target="#{tid}" data-direction="desc" style="display:none;">
             <span class="glyphicon glyphicon-sort-by-attributes-alt"></span> Sort by highlight
         </button>
-        <button type="button" class="mqc_table_makeScatter btn btn-default btn-sm" data-toggle="modal" data-target="#tableScatterModal" data-table="#{tid}">
-            <span class="glyphicon glyphicon glyphicon-stats"></span> Plot
-        </button>
+        """.format(tid=table_id)
+
+        # Scatter Plot Button
+        if len(t_headers) > 2:
+            html += """
+            <button type="button" class="mqc_table_makeScatter btn btn-default btn-sm" data-toggle="modal" data-target="#tableScatterModal" data-table="#{tid}">
+                <span class="glyphicon glyphicon glyphicon-stats"></span> Plot
+            </button>
+            """.format(tid=table_id)
+
+        # "Showing x of y columns" text
+        html += """
         <small id="{tid}_numrows_text" class="mqc_table_numrows_text">Showing <sup id="{tid}_numrows" class="mqc_table_numrows">{nrows}</sup>/<sub>{nrows}</sub> rows and <sup id="{tid}_numcols" class="mqc_table_numcols">{ncols_vis}</sup>/<sub>{ncols}</sub> columns.</small>
-    """.format(tid=table_id, nrows=len(t_rows), ncols_vis = (len(t_headers)+1)-hidden_cols, ncols=len(t_headers))
+        """.format(tid=table_id, nrows=len(t_rows), ncols_vis = (len(t_headers)+1)-hidden_cols, ncols=len(t_headers))
 
     # Build the table itself
     html += """
@@ -194,11 +225,15 @@ def make_table (dt):
         """.format( tid=table_id, title=table_title )
 
     # Build the header row
-    html += '<thead><tr><th class="rowheader">Sample Name</th>{}</tr></thead>'.format(''.join(t_headers.values()))
+    col1_header = dt.pconfig.get('col1_header', 'Sample Name')
+    html += '<thead><tr><th class="rowheader">{}</th>{}</tr></thead>'.format(col1_header, ''.join(t_headers.values()))
 
     # Build the table body
     html += '<tbody>'
-    for s_name in sorted(t_rows.keys()):
+    t_row_keys = t_rows.keys()
+    if dt.pconfig.get('sortRows') is not False:
+        t_row_keys = sorted(t_row_keys)
+    for s_name in t_row_keys:
         html += '<tr>'
         # Sample name row header
         html += '<th class="rowheader" data-original-sn="{sn}">{sn}</th>'.format(sn=s_name)
