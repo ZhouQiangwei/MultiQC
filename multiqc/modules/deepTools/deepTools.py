@@ -6,12 +6,15 @@ from __future__ import print_function
 import logging
 from multiqc import config
 from multiqc.modules.base_module import BaseMultiqcModule
-from multiqc.plots import table, bargraph, linegraph, scatter
+from multiqc.plots import table, bargraph, linegraph, scatter, beeswarm
 from . import heatmap
 import math
 import numpy as np
-import collections 
+import collections
+from collections import OrderedDict 
 import random
+import re
+import os
 
 #Initialise the logger
 log = logging.getLogger(__name__)
@@ -34,9 +37,9 @@ class MultiqcModule(BaseMultiqcModule):
 
         #correlation heatmap plot
         n = dict()
-        n['Corr'] = heatmap.parse_reports(self)
-        if n['Corr'] > 0:
-            log.info("Found {} Correlation reports".format(n['Corr']))
+        n['heatmaps'] = heatmap.parse_reports(self)
+        if n['heatmaps'] > 0:
+            log.info("Found {} heatmap reports".format(n['heatmaps']))
         
 
 
@@ -120,6 +123,35 @@ class MultiqcModule(BaseMultiqcModule):
 
 
 
+        #frip score plots
+        num_frip = 0
+        self.frip_data = dict()
+
+        for f in self.find_log_files(config.sp['deepTools']['frip'], filehandles = False):
+            self.parseFripScore(f)
+            num_frip+=1
+
+        if len(self.frip_data) > 0:
+            self.deepToolsFripPlot()
+            self.add_data_source(f, section='frip')
+            log.info("Found {} FripScore reports".format(num_frip))
+
+
+        #number of peaks plots
+        num_peaks = 0
+        self.peaks_data = dict()
+
+        for f in self.find_log_files(config.sp['deepTools']['peaks'], filehandles = False):
+            self.parsePeaks(f)
+            num_peaks+=1
+
+        if len(self.peaks_data) > 0:
+            self.deepToolsPeaksPlot()
+            self.add_data_source(f, section='Peaks')
+            log.info("Found {} Peaks reports".format(num_peaks))
+
+
+
     def parsePCA(self, f):
         fields = zip(*(line.strip().split() for line in f['f']))
  
@@ -174,12 +206,26 @@ class MultiqcModule(BaseMultiqcModule):
             #x.append([float(y) for y in fields[i]])
 
         counter = [collections.Counter(i) for i in x]
+        #counter=[]
+        #for i in range(0,len(x)):
+            #counter.append([collections.Counter(x[i])])
 
         total = [sum(i.values()) for i in counter]
+        #total=[]
+        #for i in range(0,len(counter)):
+            #total.append(sum(counter[i][0].values()))
 
         frac = [[float(y)/total[i] for y in counter[i].values()] for i in range(0,len(counter))]
+        #[x.insert(0,0) for x in frac]
+        #print(len(frac[0]),len(frac[1]),len(frac[2]),len(frac[3]),len(frac[4]))
+        #frac=[]
+        #for i in range(0,len(counter)):
+            #frac.append([float(y)/total[i] for y in counter[i][0].values()])
 
         accum = [1-np.cumsum(frac[i]) for i in range(0,len(frac))]
+        #accum=[]
+        #for i in range(0,len(frac)):
+            #accum.append([1-np.cumsum(frac[i])])
 
 
         for i in range(0,len(self.coverage_data)):
@@ -195,9 +241,10 @@ class MultiqcModule(BaseMultiqcModule):
 
 
     def parseGCBias(self, f):
-        sample = f['s_name'] #sample = f['s_name'].split(".")[0]
+        #This sample ID is based on our internal IDs scheme
+        sample = f['s_name'].split(".")[0]
         count = 0
-        
+
         fields = zip(*(line.strip().split() for line in f['f']))
         x = [float(y)/len(fields[2]) for y in range(0,len(fields[2]),1)]
         y = [math.log(float(y),2) for y in fields[2]]
@@ -205,6 +252,13 @@ class MultiqcModule(BaseMultiqcModule):
         for i in range(0, len(x)):
             d[x[i]] = y[i]
 
+        #for line in f['f']:
+         #   col1, col2, ratio = line.split()
+         #   count = count + 1
+         #   count2 = float(count)/float(num_lines)
+         #   print(count, count2)
+         #   d[count2] = math.log(float(ratio),2)
+        #print(d)
         if sample not in self.gc_bias_data:
             self.gc_bias_data[sample] = d
 
@@ -234,6 +288,49 @@ class MultiqcModule(BaseMultiqcModule):
                 self.fgpr_data[names[i]].update({bins[j]:xNor[i][j]})
 
 
+    def parseFripScore(self, f):
+        sample = f['s_name'].split(".")[0]
+
+        parsed_data = {}
+        regexes = {
+            'H3K27ac': r"H3K27ac_frip_score\s\t\s*(\d.+)",
+            'H3K27me3': r"H3K27me3_frip_score\s\t\s*(\d.+)",
+            'H3K36me3': r"H3K36me3_frip_score\s\t\s*(\d.+)",
+            'H3K4me1': r"H3K4me1_frip_score\s\t\s*(\d.+)",
+            'H3K4me3': r"H3K4me3_frip_score\s\t\s*(\d.+)",
+            'H3K9me3': r"H3K9me3_frip_score\s\t\s*(\d.+)",
+        }
+
+
+        for k, r in regexes.items():
+            match = re.search(r, f['f'])
+            if match:
+                parsed_data[k] = float(match.group(1))
+            self.add_data_source(f, sample)
+            self.frip_data[sample] = parsed_data
+
+
+    def parsePeaks(self, f):
+        sample = f['s_name'].split(".")[0]
+
+        parsed_data = {}
+        regexes = {
+            'H3K27ac': r"H3K27ac_peak_count\s\t\s*(\d.+)",
+            'H3K27me3': r"H3K27me3_peak_count\s\t\s*(\d.+)",
+            'H3K36me3': r"H3K36me3_peak_count\s\t\s*(\d.+)",
+            'H3K4me1': r"H3K4me1_peak_count\s\t\s*(\d.+)",
+            'H3K4me3': r"H3K4me3_peak_count\s\t\s*(\d.+)",
+            'H3K9me3': r"H3K9me3_peak_count\s\t\s*(\d.+)",
+        }
+
+
+        for k, r in regexes.items():
+            match = re.search(r, f['f'])
+            if match:
+                parsed_data[k] = float(match.group(1))
+            self.add_data_source(f, sample)
+            self.peaks_data[sample] = parsed_data
+
 
     def deepToolsPCAPlot(self):
         """ Generate the PCA plots """
@@ -248,7 +345,7 @@ class MultiqcModule(BaseMultiqcModule):
         self.sections.append({
             'name': 'PCA',
             'anchor': 'deepTools_PCA',
-            'content': '<p> This plot was generated by <a href="http://deeptools.readthedocs.io/en/latest/content/tools/plotPCA.html" target="_blank">plotPCA</a> and shows the principal components of samples based on the output of ' + '<a href="http://deeptools.readthedocs.io/en/latest/content/tools/multiBamSummary.html" target="_blank">multiBamSummary</a> or ' + '<a href="http://deeptools.readthedocs.io/en/latest/content/tools/multiBigwigSummary.html" target="_blank">multiBigwigSummary</a>' + '</p>' + scatter.plot(self.PCA_data, pconfig) 
+            'content': '<p> This plot was generated by <a href="http://deeptools.readthedocs.io/en/latest/content/tools/plotPCA.html" target="_blank">plotPCA</a> and shows the principal components of samples based on the output of ' + '<a href="http://deeptools.readthedocs.io/en/latest/content/tools/multiBamSummary.html" target="_blank">multiBamSummary</a>' + ' of free-duplication bams.' + '</p>' + scatter.plot(self.PCA_data, pconfig) 
         })
 
 
@@ -269,14 +366,14 @@ class MultiqcModule(BaseMultiqcModule):
         self.sections.append({
             'name': 'PCA_Comp',
             'anchor': 'deepTools_PCA_Comp',
-            'content': '<p> This plot was generated by <a href="http://deeptools.readthedocs.io/en/latest/content/tools/plotPCA.html" target="_blank">plotPCA</a> and shows the principal components of samples based on the output of ' + '<a href="http://deeptools.readthedocs.io/en/latest/content/tools/multiBamSummary.html" target="_blank">multiBamSummary</a> or ' + '<a href="http://deeptools.readthedocs.io/en/latest/content/tools/multiBigwigSummary.html" target="_blank">multiBigwigSummary</a>' + '</p>' + linegraph.plot([self.PCA_comp, self.PCA_Eigen], pconfig)
+            'content': '<p> This plot was generated by <a href="http://deeptools.readthedocs.io/en/latest/content/tools/plotPCA.html" target="_blank">plotPCA</a> and shows the principal components of samples based on the output of ' + '<a href="http://deeptools.readthedocs.io/en/latest/content/tools/multiBamSummary.html" target="_blank">multiBamSummary</a>' + ' of free-duplication bams.' + '</p>' + linegraph.plot([self.PCA_comp, self.PCA_Eigen], pconfig)
         })
 
 
     def deepToolsCoveragePlot(self):
         """ Generate the Coverage plots """
         pconfig = {
-            #'id': 'deepTools_coverage', for some reasons, with this parameter, the plot was not shown
+            #'id': 'deepTools_coverage', for some reasons, with this parameter, multiqc was not able to plot 
             #'title': 'Read Coverage',
             'xlab': 'Read Coverage',
             'xmax': 120,
@@ -322,3 +419,67 @@ class MultiqcModule(BaseMultiqcModule):
             'anchor': 'deepTools_fgpr',
             'content': '<p> This plot was generated by <a href="http://deeptools.readthedocs.io/en/latest/content/tools/plotFingerprint.html" target="_blank">plotFingerprint</a>. It determines how well the signal in the ChIP-seq sample can be differentiated from the background distribution of reads in the control sample and give a hint whether the signal is narrow or broad.</p>' + linegraph.plot(self.fgpr_data, pconfig)
         })
+
+
+    def deepToolsFripPlot(self):
+        """ Generate the Frip score plots """
+        pconfig = {
+            #'id': 'deepTools_frip',
+            'title': 'Frip score',
+            'xlab' : '',
+            'ylab': '',
+            'ymax': 1,
+        }
+
+        keys = OrderedDict()
+        defaults = {
+            'max': 1,
+            'min': 0,
+            'suffix': '',
+            'decimalPlaces': 2
+        }
+
+        keys['H3K27ac'] = dict(defaults, **{ 'title': 'H3K27ac' })
+        keys['H3K4me3'] = dict(defaults, **{ 'title': 'H3K4me3' })
+        keys['H3K4me1'] = dict(defaults, **{ 'title': 'H3K4me1' })
+        keys['H3K36me3'] = dict(defaults, **{ 'title': 'H3K36me3' })
+        keys['H3K9me3'] = dict(defaults, **{ 'title': 'H3K9me3' })
+        keys['H3K27me3'] = dict(defaults, **{ 'title': 'H3K27me3' })
+
+        self.sections.append({
+            'name': 'Frip score',
+            'anchor': 'deepTools_frip',
+            'content': '<p> This plot was generated based on frip scores from CHP pipeline.</p>' + beeswarm.plot(self.frip_data, keys, pconfig)
+        })
+
+    def deepToolsPeaksPlot(self):
+        """ Generate the Peaks plots """
+        pconfig = {
+            #'id': 'deepTools_peaks',
+            'title': 'Peaks',
+            'xlab' : '',
+            'ylab': '',
+            #'ymax': 1,
+        }
+
+        keys = OrderedDict()
+        defaults = {
+            #'max': 1,
+            'min': 0,
+            'suffix': 'peaks',
+            #'decimalPlaces': 2
+        }
+
+        keys['H3K27ac'] = dict(defaults, **{ 'title': 'H3K27ac' })
+        keys['H3K4me3'] = dict(defaults, **{ 'title': 'H3K4me3' })
+        keys['H3K4me1'] = dict(defaults, **{ 'title': 'H3K4me1' })
+        keys['H3K36me3'] = dict(defaults, **{ 'title': 'H3K36me3' })
+        keys['H3K9me3'] = dict(defaults, **{ 'title': 'H3K9me3' })
+        keys['H3K27me3'] = dict(defaults, **{ 'title': 'H3K27me3' })
+
+        self.sections.append({
+            'name': 'Peaks',
+            'anchor': 'deepTools_peaks',
+            'content': '<p> This plot was generated based on macs2 from CHP pipeline.</p>' + beeswarm.plot(self.peaks_data, keys, pconfig)
+        })
+
